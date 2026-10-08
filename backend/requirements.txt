@@ -1,0 +1,20 @@
+# Runtime
+Django>=5.1,<5.3
+djangorestframework>=3.15,<3.19
+djangorestframework-simplejwt>=5.3,<5.6
+django-cors-headers>=4.4
+django-environ>=0.11
+psycopg[binary]>=3.2
+django-redis>=5.4
+redis>=5.0
+argon2-cffi>=23.1
+pypdfium2>=4.30
+Pillow>=10.4
+django-storages[s3]>=1.14
+stripe>=10
+cryptography>=43
+
+# Testing only (not needed in production)
+pytest>=8.0
+pytest-django>=4.8
+pytest-env>=1.1

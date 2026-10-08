@@ -1,0 +1,108 @@
+EDUVAULT - DAILY DEVELOPMENT LOG (team context)
+================================================
+Project : EduVault backend (Django 5.1 + Django REST Framework), folder Edu_vauilt/backend
+Started : 28 Sep 2026
+Updated : 06 Oct 2026
+
+Fixed rules followed every day
+  - APIView only (no ViewSets / routers), explicit path() URLs, one settings file (config/settings.py)
+  - Response envelope: {success, data, meta} / {success, error:{code,message,details}}
+  - PDFs are view-only: students get server-rendered watermarked pages, no raw PDF download
+  - Payment courses: admin approval -> checkout -> verified Stripe webhook -> access active
+  - Dev DB is SQLite for now; PostgreSQL / Redis / Stripe / S3 / SMTP are NOT yet verified for real
+
+NOTE: This log was rebuilt from file dates and the audit reports. The project folder has no git history
+and no files dated 28-30 Sep or 02-04 Oct. Those days are marked "to be filled in by developer".
+
+
+------------------------------------------------------------
+28 Sep - 30 Sep 2026
+------------------------------------------------------------
+  [to be filled in by developer - no files or records found for these dates]
+  (Suggested items to confirm: requirements gathering, planning, data model design, environment setup.)
+
+
+------------------------------------------------------------
+01 Oct 2026 (Thu) - Backend foundation built
+------------------------------------------------------------
+Created the Django project and all apps.
+  Project setup   : manage.py, config/ (asgi, wsgi, settings, urls), requirements.txt, pytest.ini, .env, .gitignore
+  accounts        : custom User model, JWT authentication, serializers and views (login, registration, profile)
+  access          : CourseAccess model + services (access evaluation: pending / payment_required / active / expired / suspended)
+  courses         : Course model (approval types manual / immediate / payment; status draft / published / archived),
+                    serializers, services, views, urls
+  resources       : PDF resources, validation (pypdfium2), storage layer (local default, S3 via django-storages)
+  viewing         : protected page viewer, server-side rendering with watermark, view-activity tracking, permissions
+  payments        : Payment + Stripe event models, serializers, views, Stripe checkout and webhook
+  notifications   : in-app notifications + e-mail, services, views, urls
+  audit           : audit event model (immutable), services, admin-facing list view
+  platform_settings: platform settings model, services, views
+  portal / reports: student dashboard / learning-history services; admin reports and dashboard services
+  URLs            : per-app urls.py mounted from config/urls.py
+Documents written
+  BACKEND_AUDIT.md, DATABASE_AUDIT.md, FINAL_BACKEND_AUDIT.md, docs/FRONTEND_HANDOFF.md (API contract for the frontend)
+Cleanup at end of day: .gitignore for venv, caches, .env, sqlite, private_media.
+
+
+------------------------------------------------------------
+02 Oct - 04 Oct 2026
+------------------------------------------------------------
+  [to be filled in by developer - no files or records found for these dates]
+
+
+------------------------------------------------------------
+05 Oct 2026 (Mon) - Hardening, URL restructure, tests, payment approval flow
+------------------------------------------------------------
+Morning
+  - Full read-only backend audit (Phase 1) written to empty.txt (project root).
+  - Security hardening (Phase 3): per-device sessions (JWT sid + epoch), refresh-token reuse detection,
+    login lockout by (email, IP), TOTP replay protection, admin 2FA first-enrolment code
+    (management command issue_admin_2fa_enrollment), encrypted TOTP secret (accounts/crypto.py).
+  - Live-server check: LIVE_SERVER_AUDIT.md; .env.example recreated; Readme.md written (setup + layout).
+  - Student registration made 3 steps (send-otp, verify-otp, register) with e-mail OTP; new name + phone fields.
+Afternoon
+  - Wrote the automated test suite (tests/): accounts, student auth flow, security, phase 3/4/6 workflows,
+    courses and access, resources, viewer, payments, notifications, reports, audit, performance, tunnel/CORS config.
+  - Admin features: admin notifications, course update + unpublish, per-student registration decision,
+    student my-courses / payment-requests / settings, profile update, resource replace.
+  - Removed drf-spectacular / Swagger / OpenAPI completely (API contract = docs/FRONTEND_HANDOFF.md);
+    guard test test_no_openapi.py. Report: DRF_SPECTACULAR_REMOVAL_FINAL.md.
+  - API endpoint verification table: API_ENDPOINT_VERIFICATION.md.
+  - Removed the common/ package: middleware, error handlers, crypto, permissions moved to config/, accounts/, core/.
+  - URL restructure: config/urls.py has 5 includes (admin/, api/accounts/, api/payment/, api/student/, api/admin/);
+    each app exports student_portal_urlpatterns / admin_portal_urlpatterns; new config/student_urls.py and admin_urls.py;
+    public URLs frozen in tests/url_inventory.json (82 routes) + contract test. Admin URL split with
+    approval-requests/ (old registrations/ kept as deprecated alias). Reports: URL_STRUCTURE_AUDIT.md,
+    BACKEND_URL_ROUTING_AUDIT.md.
+Evening
+  - Payment-course workflow: student request -> admin decision payment_required -> checkout allowed only after approval
+    (403 PAYMENT_NOT_APPROVED otherwise) -> only the signed Stripe webhook activates access. Webhook idempotency kept.
+    Reports: ADMIN_COURSE_APPROVAL_AUDIT.md, ADMIN_COURSE_CRUD_PDF_ACCESS_AUDIT.md, PAYMENT_APPROVAL_PDF_WORKFLOW_AUDIT.md.
+  - Django built-in admin restored at /admin/, served only on localhost (host guard middleware);
+    model admins registered mostly read-only. Report: DJANGO_ADMIN_ROUTING_FIX.md.
+  - Tests added: admin URL structure, django admin, core layout, course CRUD + PDF access, approval/payment/PDF workflow.
+
+
+------------------------------------------------------------
+06 Oct 2026 (Tue) - Cleanup audit and verification
+------------------------------------------------------------
+  - Read-only project cleanup audit: PROJECT_CLEANUP_AUDIT.md (duplicate code, dead code, URLs, settings, dependencies).
+  - Result: no duplicate or dead production code, no duplicate routes or URL names, no unused dependencies.
+  - Removed: blank backend/empty.txt and 6 unused test imports (5 test files). No production code changed.
+  - Final report: PROJECT_CLEANUP_FINAL.md.
+  - Verification: manage.py check = no issues; makemigrations --check = no changes;
+    pytest = 1218 passed, 13 skipped (same before and after cleanup).
+  - Added admin / authorization tests: test_admin_authorization_matrix, test_audit_coverage, test_phase4_gaps, test_settings, test_accounts.
+
+
+------------------------------------------------------------
+CURRENT STATUS (06 Oct 2026)
+------------------------------------------------------------
+Done     : all backend apps, student + admin APIs, admin 2FA, payment approval flow, protected PDF viewer,
+           notifications, audit log, reports, 1218 automated tests passing.
+Open     : - STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET not set in local .env
+           - verify on real PostgreSQL, Redis, Stripe, S3, SMTP (production needs real Redis)
+           - decide when to remove deprecated URL /api/admin/students/registrations/ (after frontend moves)
+           - decide on archiving old audit reports (root empty.txt should be renamed)
+           - add missing keys to .env.example
+           - frontend not started (API contract: backend/docs/FRONTEND_HANDOFF.md)

@@ -1,0 +1,960 @@
+================================================
+EDUVAULT BACKEND COMPLETE AUDIT
+================================================
+
+AUDIT DATE: 2026-10-05
+PROJECT:    EduVault Django/DRF backend  (Edu_vauilt/backend)
+MODE:       Phase 1, READ-ONLY. No application code, config, migration, test,
+            template, frontend or database file was changed. The only file created
+            inside the project is this empty.txt.
+
+Method / evidence sources
+  E1  Full source read of config, accounts, access, courses, resources, viewing,
+      payments, notifications, platform_settings, audit, reports, portal, common.
+  E2  python manage.py check / makemigrations --check --dry-run / spectacular /
+      pytest, all run against IN-MEMORY SQLite + locmem cache (never the dev
+      db.sqlite3, never PostgreSQL/Redis).
+  E3  Two throw-away runtime probes written OUTSIDE the project (scratchpad) and run
+      on an in-memory test DB: (a) a sweep that calls every route with every HTTP
+      method as anonymous / student / admin; (b) an end-to-end workflow script
+      (register -> approve -> access -> checkout -> signed webhook -> viewer ->
+      expiry -> suspend, plus admin 2FA/refresh/logout). Stripe session creation was
+      mocked; no network, no real Stripe, no real e-mail.
+  E4  The existing 552-test suite (see section 27).
+  Deviation from the brief: "spectacular --file before.yml" would create a file in
+  the project, which conflicts with "only empty.txt may be created". The schema was
+  generated to a scratchpad path instead; result is reported in section 24.
+  Secrets: .env was inspected for non-secret keys only. No secret, token, OTP, TOTP
+  secret, backup code or key appears in this report ([REDACTED] where relevant).
+
+------------------------------------------------
+1. EXECUTIVE SUMMARY
+------------------------------------------------
+Overall: the backend is real, database-driven, internally consistent and well
+tested. All 64 routes are reachable and behave correctly for anonymous, student and
+admin callers. 541 tests pass, 0 fail, 11 skipped (by-design); manage.py check is
+clean; there is no migration drift; the OpenAPI schema generates with no warnings
+and matches the committed docs/openapi.yaml exactly.
+
+No CRITICAL security defect was found. Privilege separation, IDOR protection, Stripe
+signature/idempotency/amount checks and the secure viewer all hold under test.
+
+The gaps are WORKFLOW-SHAPE gaps, not bugs:
+  G1  The Admin workflow step "Make Decision: Immediate Access / Payment Required /
+      Keep Pending" does not exist as a per-registration decision. Registration
+      approval is account-level (pending -> active / rejected). Whether a course is
+      free, manually approved, or paid is a COURSE property (Course.access_mode).
+      "Immediate" is only reachable as a per-student, per-course admin grant
+      (POST /api/admin/access/grant/). "Payment required per student" has no
+      equivalent. (PARTIAL)
+  G2  The URL layout does not match the target: no api/admin/login/, api/admin/course/
+      (plural "courses/" exists), api/admin/students/ (it is "users/" +
+      "registrations/"), api/admin/notifications/ (shared /api/notifications/),
+      and the student area is not fully under api/student/ (course, viewing,
+      payment, notifications, profile live elsewhere).
+  G3  No lessons model; "course content" = PDF resources only. No course "unpublish"
+      (only archive). Course update is PATCH only (PUT -> 405).
+  G4  "Zoom validation" in the viewer: there is no zoom parameter. Render width is a
+      server setting; any ?zoom= is ignored. (Not a vulnerability; feature absent.)
+  G5  No frontend exists in the workspace (no frontend/ dir), so every frontend
+      dependency is UNKNOWN. /student/pending etc. are frontend routes the backend
+      can only support through status codes/fields.
+
+Counts: 64 unique paths, 76 HTTP operations (11 public, 8 any-authenticated,
+14 student, 43 admin). 2 more routes (schema, docs) exist only when
+API_DOCS_ENABLED (default = DEBUG).
+
+------------------------------------------------
+2. PROJECT STRUCTURE
+------------------------------------------------
+Root: Edu_vauilt/  (.venv, backend/, DATABASE_AUDIT.md, FINAL_BACKEND_AUDIT.md, .gitignore)
+Not a git repository. No frontend/ directory.
+
+backend/ (all USED unless noted)
+  config/            settings.py (single file), urls.py, asgi/wsgi
+  accounts/          User, AdminBackupCode, JWT auth class, login/2FA/registration/user mgmt
+  audit/             AuditEvent + Actions codes, list/detail API
+  courses/           Course model, catalogue + admin CRUD/publish/archive
+  access/            CourseAccess, evaluate_access() (central), grant/request/decide/revoke
+  resources/         Resource (private PDF), storage abstraction, admin upload/validate/publish
+  viewing/           ViewActivity, server-side PDF render + watermark, HasCourseAccess
+  payments/          Payment, StripeEvent, checkout, webhook
+  notifications/     Notification, e-mail + in-app
+  platform_settings/ PlatformSettings singleton, admin GET/PATCH, test e-mail
+  reports/           model-less: dashboard + 6 reports (ORM aggregation)
+  portal/            model-less: student dashboard
+  common/            responses envelope, exceptions, pagination, permissions, crypto, openapi hook
+  tests/             14 test modules + conftest + docs_urls (test-only urlconf)
+  docs/              FRONTEND_HANDOFF.md, openapi.yaml
+  Also: manage.py, pytest.ini, requirements.txt, README.md, BACKEND_AUDIT.md,
+        .env, .env.example, db.sqlite3 (dev DB, gitignored), .gitignore
+Not present: Django admin (django.contrib.admin not installed), management commands,
+project templates (only drf-spectacular's Swagger template), signals, celery.
+Migrations: one or two per app, in sync with models (makemigrations --check clean).
+
+------------------------------------------------
+3. CURRENT URL STRUCTURE  (config/urls.py)
+------------------------------------------------
+path() entries: 18 (16 include(), 2 conditional docs). re_path(): none.
+  api/accounts/                 -> accounts.urlpatterns            (13 paths)
+  api/course/                   -> courses.urlpatterns             (2)
+  api/viewing/                  -> viewing.urlpatterns             (4)
+  api/payment/                  -> payments.urlpatterns            (2)
+  api/notifications/            -> notifications.urls              (4)
+  api/student/access/           -> access.urlpatterns              (2)
+  api/student/payments/         -> payments.student_urlpatterns    (2)
+  api/student/learning-history/ -> viewing.student_urlpatterns     (1)
+  api/student/                  -> portal.urls                     (1: dashboard/)
+  api/admin/ (x8 includes)      -> accounts.admin_urlpatterns (users, registrations: 8),
+                                   courses.admin_urlpatterns (4), access.admin_urlpatterns (3),
+                                   payments.admin_urlpatterns (2), resources.urls (5),
+                                   audit.urls (2), platform_settings.urls (2), reports.urls (7)
+  api/schema/, api/docs/        -> only if API_DOCS_ENABLED (default DEBUG)
+handler404/handler500 -> JSON envelope (common.views). "/" and "/api/" are
+deliberately unmatched (project decision; 404).
+
+------------------------------------------------
+4. COMPLETE ENDPOINT TABLE
+------------------------------------------------
+Auth key: PUB = no auth (AllowAny, authentication_classes=[]); ANY = any authenticated
+user; STU = approved student (IsApprovedStudent: role student AND status active;
+pending/rejected get 403 REGISTRATION_PENDING/REJECTED); STU* = any student incl.
+pending (IsStudentRole); ADM = IsAdminRole. All authenticated routes use
+SessionAwareJWTAuthentication (JWT + Redis inactivity session + is_active check).
+Reachable = YES for all (sweep, E3). Status key: PASS / PARTIAL / FAIL / UNREACHABLE /
+NOT_TESTED. "Sweep" = anon/student/admin statuses observed; PASS requires also the
+workflow evidence in sections 5-14.
+
+ACCOUNTS (module accounts)
+ POST api/accounts/register/               auth-register          PUB  throttle register   PASS (201, status pending)
+ POST api/accounts/login/                  auth-login             PUB  throttle login      PASS
+ POST api/accounts/logout/                 auth-logout            ANY                      PASS (see M1)
+ POST api/accounts/refresh/                auth-refresh           PUB  throttle login      PASS (rotation+blacklist verified)
+ GET,PATCH api/accounts/me/                auth-me                ANY                      PASS (PATCH full_name only)
+ POST api/accounts/password-change/        auth-password-change   ANY                      PASS
+ POST api/accounts/forgot-password/        auth-forgot-password   PUB  throttle reset      PASS (no enumeration)
+ POST api/accounts/forgot-password/verify/ auth-forgot-password-verify PUB                 PASS (OTP, attempt cap)
+ POST api/accounts/reset-password/         auth-reset-password    PUB                      PASS (token bound to pw hash)
+ POST api/accounts/admin/login/            auth-admin-login       PUB                      PASS (returns 2FA challenge only)
+ POST api/accounts/admin/2fa/setup/        auth-2fa-setup         PUB (challenge token)    PASS (see M3)
+ POST api/accounts/admin/2fa/confirm/      auth-2fa-confirm       PUB (challenge token)    PASS (issues tokens + backup codes)
+ POST api/accounts/admin/2fa/verify/       auth-2fa-verify        PUB (challenge token)    PASS (TOTP or backup code)
+COURSES
+ GET  api/course/                          course-list            STU                      PASS
+ GET  api/course/<uuid>/                   course-detail          STU                      PASS
+VIEWING
+ GET  api/viewing/courses/<uuid>/resources/        viewer-course-resources  STU+HasCourseAccess  PASS
+ GET  api/viewing/resources/<uuid>/                viewer-resource          STU+HasCourseAccess  PASS
+ GET  api/viewing/resources/<uuid>/pages/<int>/    viewer-page              STU+HasCourseAccess  PASS
+ POST api/viewing/resources/<uuid>/activity/       viewer-activity          STU+HasCourseAccess  PASS
+PAYMENT
+ POST api/payment/create-checkout/         payment-create-checkout STU throttle checkout    PASS (Stripe call mocked; live NOT_TESTED)
+ POST api/payment/stripe/webhook/          payment-stripe-webhook  PUB (signature)          PASS
+NOTIFICATIONS (shared student+admin, always own rows)
+ GET  api/notifications/                   notification-list      ANY                      PASS
+ POST api/notifications/read-all/          notification-read-all  ANY                      PASS
+ DELETE api/notifications/<uuid>/          notification-detail    ANY                      PASS
+ POST api/notifications/<uuid>/read/       notification-read      ANY                      PASS
+STUDENT AREA
+ GET,POST api/student/access/              access-list            STU                      PASS
+ GET  api/student/access/<uuid>/           access-detail          STU (own only)           PASS
+ GET  api/student/payments/                my-payments            STU                      PASS
+ GET  api/student/payments/<uuid>/         payment-detail         STU (own only)           PASS
+ GET  api/student/learning-history/        my-learning-history    STU                      PASS
+ GET  api/student/dashboard/               student-dashboard      STU* (pending allowed)   PASS
+ADMIN (all ADM; student token -> 403, anon -> 401, verified for every route)
+ GET  api/admin/users/                      admin-user-list                                PASS
+ GET,PATCH,DELETE api/admin/users/<uuid>/   admin-user-detail                              PASS
+ POST api/admin/users/<uuid>/suspend/       admin-user-suspend                             PASS
+ POST api/admin/users/<uuid>/reactivate/    admin-user-reactivate                          PASS
+ GET  api/admin/registrations/              admin-registration-list                        PASS
+ GET  api/admin/registrations/<uuid>/       admin-registration-detail                      PASS
+ POST api/admin/registrations/<uuid>/approve/ admin-registration-approve                   PASS
+ POST api/admin/registrations/<uuid>/reject/  admin-registration-reject                    PASS
+ GET,POST api/admin/courses/                admin-course-list                              PASS
+ GET,PATCH,DELETE api/admin/courses/<uuid>/ admin-course-detail                            PASS (no PUT)
+ POST api/admin/courses/<uuid>/publish/     admin-course-publish                           PASS
+ POST api/admin/courses/<uuid>/archive/     admin-course-archive                           PASS
+ GET  api/admin/access/                     admin-access-list                              PASS
+ POST api/admin/access/grant/               admin-access-grant                             PASS (see L2)
+ GET,PATCH api/admin/access/<uuid>/         admin-access-detail    (approve|reject|revoke) PASS
+ GET  api/admin/payments/                   admin-payment-list     read-only               PASS
+ GET  api/admin/payments/<uuid>/            admin-payment-detail   read-only               PASS
+ GET,POST api/admin/resources/              admin-resource-list    multipart PDF upload    PASS
+ GET,PATCH,DELETE api/admin/resources/<uuid>/ admin-resource-detail                        PASS
+ POST api/admin/resources/<uuid>/validate/  admin-resource-validate                        PASS
+ POST api/admin/resources/<uuid>/publish/   admin-resource-publish                         PASS
+ POST api/admin/resources/<uuid>/archive/   admin-resource-archive                         PASS
+ GET  api/admin/audit-logs/                 audit-list                                     PASS
+ GET  api/admin/audit-logs/<uuid>/          audit-detail                                   PASS
+ GET,PATCH api/admin/settings/              admin-settings                                 PASS
+ POST api/admin/settings/test-email/        admin-settings-test-email                      PASS (console backend)
+ GET  api/admin/dashboard/                  admin-dashboard                                PASS
+ GET  api/admin/reports/{overview,users,courses,access,payments,activity}/  report-*     PASS (6 routes)
+DOCS (conditional): GET api/schema/ (schema), GET api/docs/ (docs) -> 404 when
+ API_DOCS_ENABLED false (tested config); present in DEBUG. Status: PASS by schema
+ generation; Swagger page itself NOT_TESTED. No health endpoint exists.
+
+------------------------------------------------
+5. ADMIN WORKFLOW AUDIT
+------------------------------------------------
+| Workflow Step | Backend Endpoint/Service | Status | Evidence | Problem |
+| /login (admin) | POST /api/accounts/admin/login/ | IMPLEMENTED & WORKING | probe A1,A5 | URL is not api/admin/login/ |
+| Email + password | accounts.services.admin_login / authenticate_credentials | IMPLEMENTED & WORKING | A1 wrong pw 401 INVALID_CREDENTIALS; lockout after N failures | lockout keyed by e-mail only (M5) |
+| Admin account (role) | role==admin enforced in authenticate_credentials | IMPLEMENTED & WORKING | A3 student creds -> 401; A4 admin on student login -> 401 | none |
+| TOTP 2FA check | /admin/2fa/{setup,confirm,verify}/ | IMPLEMENTED & WORKING | A6 bad code 401 INVALID_TWO_FACTOR_CODE; A7 good code 200; A8 challenge token is not a bearer (401) | first enrolment needs only password (M3) |
+| Invalid -> error | ServiceError envelope | IMPLEMENTED & WORKING | A1,A6 | none |
+| Valid -> Admin dashboard | GET /api/admin/dashboard/ | IMPLEMENTED & WORKING | sweep 200; reports.services all ORM aggregates | none |
+| Registrations -> pending students | GET /api/admin/registrations/?status=pending | IMPLEMENTED & WORKING | S5 | none |
+| Registration detail | GET /api/admin/registrations/<id>/ | IMPLEMENTED & PARTIAL | S6 200 | returns user profile only; no nested accesses/payments (must query /access/?student= and /payments/?student=) |
+| Make decision: approve / reject | POST .../approve/, .../reject/ | IMPLEMENTED & WORKING | S7 approve ->active; S8 repeat 409; R1 reject | rejected is terminal: re-approve 409 (R3) (L3) |
+| Decision: Immediate Access | POST /api/admin/access/grant/ (per student+course) or course.access_mode=immediate | IMPLEMENTED & PARTIAL | S10 immediate course self-grants; grant endpoint 201 | not a registration-time decision (G1) |
+| Decision: Payment Required | Course.access_mode=payment_required only | NOT IMPLEMENTED (per student) | S13 /registrations/<id>/decision/ -> 404; S12 paid course -> 402 | exists only as a course-level mode |
+| Decision: Keep Pending | no action (status stays pending) | IMPLEMENTED & PARTIAL | implicit | no explicit "keep pending"/note action |
+| Active / Access Active | grant_course_access -> CourseAccess.status=active | IMPLEMENTED & WORKING | S14 PATCH access approve 200; P8 record active | none |
+| Payment Required -> Student Checkout | POST /api/payment/create-checkout/ | IMPLEMENTED & WORKING | P1 201 + checkout_url; server-side price (P2) | live Stripe NOT_TESTED |
+| Stripe Webhook -> Access Active | POST /api/payment/stripe/webhook/ | IMPLEMENTED & WORKING | P4 unsigned 400; P5 signed ->paid; P6 access granted; P7 duplicate | none |
+| Users list / details | GET /api/admin/users/, /<id>/ | IMPLEMENTED & WORKING | sweep | none |
+| Suspend / Reinstate | POST .../suspend/, .../reactivate/ | IMPLEMENTED & WORKING | Z1,Z5; Z2 old tokens -> 401 USER_INACTIVE; Z3 login 403 | named "reactivate"; only ACTIVE can be suspended; suspend also kills all sessions |
+| Courses list / details | GET /api/admin/courses/, /<id>/ | IMPLEMENTED & WORKING | sweep | none |
+| Course Details -> Resources | /api/admin/resources/?course=<id> (+validate/publish/archive) | IMPLEMENTED & PARTIAL | V1,V2 draft hidden until validated+published | flat route, not nested under course (G2) |
+| Course Details -> Settings | PATCH /api/admin/courses/<id>/ (access_mode, price, currency, duration); PATCH /api/admin/settings/ (platform) | IMPLEMENTED & WORKING | PATCH 200; PUT 405 | status cannot be changed via PATCH (correct) |
+
+------------------------------------------------
+6. STUDENT WORKFLOW AUDIT
+------------------------------------------------
+| Workflow Step | Backend Endpoint/Service | Status | Evidence | Problem |
+| /login email+password | POST /api/accounts/login/ | IMPLEMENTED & WORKING | S3 | none |
+| Invalid -> error | INVALID_CREDENTIALS 401 | IMPLEMENTED & WORKING | S4 | none |
+| Check account: Pending | login 200 with user.status=pending; /student/dashboard/ 200 incl. registration block; other student APIs 403 REGISTRATION_PENDING | IMPLEMENTED & WORKING | S1,S2 | "/student/pending" is a frontend route (frontend absent) |
+| Check account: Active | status=active | IMPLEMENTED & WORKING | S7,S9 | none |
+| Check account: Suspended | login 403 ACCOUNT_SUSPENDED; existing tokens 401 USER_INACTIVE; refresh 401 | IMPLEMENTED & WORKING | Z1-Z4 | none |
+| (extra) Rejected | login 200, student APIs 403 REGISTRATION_REJECTED | IMPLEMENTED & WORKING | R1,R2 | not in diagram |
+| Student dashboard | GET /api/student/dashboard/ | IMPLEMENTED & WORKING | probe; portal.services from DB | none |
+| Courses | GET /api/course/ (+ per-course access state) | IMPLEMENTED & WORKING | S9 | none |
+| Profile | GET/PATCH /api/accounts/me/ | IMPLEMENTED & PARTIAL | sweep 200 | full_name only; no api/student/profile/ |
+| Notifications | /api/notifications/ | IMPLEMENTED & WORKING | sweep | not under api/student/ |
+| Course details | GET /api/course/<id>/ | IMPLEMENTED & WORKING | sweep | none |
+| Check course access | access.services.evaluate_access | IMPLEMENTED & WORKING | S9,P3,P6,X1 | states named granted/pending/requestable/payment_required/expired/rejected/revoked/unavailable |
+| Active -> view notes -> secure viewer -> watermarked page images | /api/viewing/... | IMPLEMENTED & WORKING | V2,V3 | none |
+| Pending -> wait | state=pending; viewer 403 ACCESS_PENDING | IMPLEMENTED & WORKING | S11, tests | none |
+| Payment required -> checkout -> Stripe -> verified webhook -> access active -> view notes | create-checkout, webhook, viewer | IMPLEMENTED & WORKING | P1-P8, V3 | live Stripe NOT_TESTED |
+| Expired -> renewal/payment | state=expired; viewer 403 ACCESS_EXPIRED; create-checkout allowed again | IMPLEMENTED & WORKING (paid courses) | X1,X3 | renewal for non-paid courses (request again) is code-reviewed only: NOT_TESTED at runtime |
+
+------------------------------------------------
+7. ADMIN URL STRUCTURE AUDIT
+------------------------------------------------
+"api/admin/" occurs 8 times in config/urls.py (accounts, courses, access, payments,
+resources, audit, platform_settings, reports). All sub-paths are disjoint, so there is
+no collision, but it is eight mounts of one prefix. No nested admin routes beyond
+those listed in section 3.
+
+Current -> Recommended (nothing changed; all are BREAKING without aliases)
+| Current URL | Recommended URL | Reason | Frontend Dependency | Breaking Change |
+| api/accounts/admin/login/ | api/admin/login/ | target layout; admin entry point under admin | frontend absent (UNKNOWN); documented in FRONTEND_HANDOFF.md | YES |
+| api/accounts/admin/2fa/{setup,confirm,verify}/ | api/admin/login/2fa/{setup,confirm,verify}/ (or api/admin/2fa/...) | keep admin auth together | same | YES |
+| api/admin/courses/ (+<id>/, publish, archive) | api/admin/course/ ... | target singular "course" | same | YES |
+| api/admin/resources/ (+actions) | api/admin/course/<id>/resources/ (or keep flat) | resources belong to a course in the workflow | same | YES (or none if kept) |
+| api/admin/users/ (+suspend, reactivate) | api/admin/students/ (+suspend, reinstate) | target "students" | same | YES |
+| api/admin/registrations/ (+approve/reject) | api/admin/students/registrations/ | group under students | same | YES |
+| api/admin/access/ (+grant) | api/admin/students/<id>/access/ or api/admin/course/<id>/access/ | course-access management is a student action in the workflow | same | YES |
+| api/admin/payments/ | api/admin/students/<id>/payments/ or keep api/admin/payments/ | payment status is a student action | same | YES/NO |
+| api/admin/reports/*, api/admin/dashboard/ | api/admin/reports/ (dashboard -> reports/dashboard/) | target has reports/ only | same | dashboard: YES |
+| api/admin/audit-logs/ | unchanged | already matches | - | NO |
+| api/admin/settings/ (+test-email) | unchanged | already matches | - | NO |
+| api/notifications/ | api/admin/notifications/ (admin) and api/student/notifications/ (student) | target has both | same | YES |
+Note: users/ also contains admin accounts (role filter); a students/ route should
+filter role=student. Admin accounts have no management UI/endpoint by design.
+
+------------------------------------------------
+8. COURSE MANAGEMENT AUDIT  (current api/admin/courses/)
+------------------------------------------------
+ create   POST   /api/admin/courses/            IMPLEMENTED (201, draft, slug auto-unique, audited)
+ list     GET    /api/admin/courses/            IMPLEMENTED (q, category, access_mode, status filters, paginated)
+ retrieve GET    /api/admin/courses/<id>/       IMPLEMENTED
+ update   PATCH  /api/admin/courses/<id>/       IMPLEMENTED (partial; price rules enforced; status immutable here)
+ update   PUT    /api/admin/courses/<id>/       NOT IMPLEMENTED (405)
+ delete   DELETE /api/admin/courses/<id>/       IMPLEMENTED (409 COURSE_IN_USE if accesses/resources exist; archive instead)
+ publish  POST   .../publish/                   IMPLEMENTED (first publish notifies all active students)
+ unpublish                                      NOT IMPLEMENTED (only archive; no archived/published -> draft path; publish of an archived course is allowed again)
+ archive  POST   .../archive/                   IMPLEMENTED (archived -> students get state "unavailable")
+ lessons                                        NOT IMPLEMENTED (no model/route; probe: 404)
+ course content / resource management           PARTIAL (flat /api/admin/resources/ with draft->validated->published->archived lifecycle; no nested route)
+ course access rules                            IMPLEMENTED (access_mode immediate | manual_approval | payment_required; price, currency, access_duration_days)
+
+------------------------------------------------
+9. STUDENT MANAGEMENT AUDIT  (current api/admin/users|registrations|access|payments)
+------------------------------------------------
+ list students            IMPLEMENTED  users/?role=student&status=&q=; registrations/?status=
+ student details          IMPLEMENTED  users/<id>/ (GET; PATCH full_name; DELETE non-admin)
+ registration details     IMPLEMENTED  registrations/<id>/ (profile only)
+ approve registration     IMPLEMENTED  pending -> active; sets reviewed_by/at; notifies; audited (DB state verified S7; repeat 409)
+ reject registration      IMPLEMENTED  pending -> rejected + reason (<=500); notifies (R1)
+ suspend student          IMPLEMENTED  active -> suspended; blacklists all refresh tokens, ends session (Z1-Z2)
+ reinstate student        IMPLEMENTED  suspended -> active (named reactivate) (Z5)
+ course access management IMPLEMENTED  access/grant, access/<id> PATCH approve|reject|revoke; all via services in transactions
+ payment-required decision NOT IMPLEMENTED per student (course-level only)
+ immediate-access decision PARTIAL     grant endpoint (admin_grant_access requires an active student)
+ pending decision         PARTIAL      implicit
+ payment status           IMPLEMENTED  admin payments list/detail, read-only (no admin can mark paid: good)
+ other                    NOT IMPLEMENTED: re-open a rejected registration; suspend a pending/rejected user; admin notes per student.
+DB-state verification: registration approve/reject/suspend/reactivate, access grant/approve/
+revoke, payment paid/refunded all execute select_for_update + status writes + AuditEvent in one
+transaction; confirmed through probe outcomes and the existing suite.
+
+------------------------------------------------
+10. AUTHENTICATION AUDIT
+------------------------------------------------
+ Admin e-mail/password            WORKING  returns only {requires_two_factor, two_factor_setup_required, challenge_token}; no JWT before 2FA
+ TOTP 2FA                         WORKING  pyotp, window 1, secret Fernet-encrypted at rest, challenge signed, 300 s
+ Invalid password                 WORKING  401 generic message, timing equalised, audit LOGIN_FAILED, lockout after 5 (default) per e-mail for 15 min
+ Invalid TOTP                     WORKING  401, separate 2FA lockout counter
+ Admin role enforcement           WORKING  role checked at login, at challenge, and by IsAdminRole on every admin view (DB role, not token claim)
+ Logout                           WORKING  blacklists refresh + ends session; access token dead immediately (A13 401)
+ Token refresh / JWT rotation     WORKING  ROTATE_REFRESH_TOKENS + BLACKLIST_AFTER_ROTATION; reuse of old refresh -> 401 (A11)
+ JWT blacklist                    WORKING  also bulk-blacklisted on password change/reset/suspend
+ Backup codes                     WORKING  8 codes, keyed-hash stored, single-use atomic claim (suite test_backup_code_single_use); count 8 confirmed in DB (A9)
+ Suspended admin                  WORKING  is_active false -> login 403; existing tokens 401 USER_INACTIVE
+ Inactive admin                   WORKING  (same mechanism; there is no separate "inactive" state)
+ Student cannot obtain admin rights  VERIFIED  student creds on admin login -> 401 (A3); student bearer on every admin route -> 403 (sweep); challenge token not accepted as bearer (A8)
+ Student auth                     WORKING  invalid 401; pending/rejected may log in (limited APIs); active ok; suspended 403 (S3,S4,R2,Z3)
+ Student cannot access admin APIs VERIFIED  403 on all 33 admin paths
+ Admin cannot use student APIs    VERIFIED  admin bearer on student routes -> 403 (role==student required)
+ Other: access token 15 min, refresh 7 days, inactivity timeout 30 min (Redis session key), Argon2 password hasher, password policy configurable.
+
+------------------------------------------------
+11. COURSE ACCESS AUDIT
+------------------------------------------------
+Central function: access.services.evaluate_access(student, course, record=_UNSET) ->
+AccessDecision(state, allowed, expires_at, access_id). It is the ONLY place that decides
+"allowed". Callers: viewing.permissions.HasCourseAccess (viewer), CourseAccessSerializer,
+access_states_for (course catalogue, N+1-safe), request_course_access, create_checkout.
+No duplicate access logic found in unrelated views.
+Course.status!=published OR student not approved OR role!=student  -> "unavailable" (deny).
+CourseAccess.status: pending | active | rejected | revoked (+ derived expired).
+Derived client states: granted, pending, requestable, payment_required, expired, rejected,
+revoked, unavailable. Mapping to the brief: pending=pending; payment_required=payment_required;
+active=granted; expired=expired; suspended = student account suspended -> unavailable (and
+JWT rejected earlier); no per-course "suspended" state (revoked is the equivalent).
+Verified: expiry boundary (X1), payment-source access with duration (P8), revoke on full
+refund (suite), archived course -> unavailable (code), renewal path for paid courses (X3).
+
+------------------------------------------------
+12. PAYMENT / STRIPE AUDIT
+------------------------------------------------
+ Checkout creation   WORKING  amount/currency copied from Course on the server; client sends only course id; throttle 20/h; PAYMENTS_ENABLED + key-configured checks; Stripe error -> payment FAILED + 502
+ Webhook endpoint    WORKING  POST /api/payment/stripe/webhook/, no JWT
+ Signature check     WORKING  stripe.Webhook.construct_event with raw body; missing/forged/stale -> 400 INVALID_SIGNATURE (P4,P9, suite); 503 if secret not configured
+ Idempotency         WORKING  StripeEvent.event_id UNIQUE; duplicate -> {"result":"duplicate"}, one row (P7); whole handler in one transaction so a failure rolls back and Stripe retries
+ StripeEvent storage WORKING  stores id, type, linked payment, received_at (not the payload)
+ Payment status      WORKING  pending -> paid | failed | cancelled | refunded; failures cannot downgrade paid
+ Access activation   WORKING  only from verified checkout.session.completed / async_payment_succeeded, with payment_status=="paid" AND amount_total/currency equal to the stored Payment (mismatch -> PAYMENT_MISMATCH audit, no access; observed: a wrong amount was refused)
+ Invalid webhook     WORKING  400, nothing written
+ Unauthorized payment modification  NONE POSSIBLE: no admin or student write endpoint touches Payment; only the signed webhook
+ Secrets             not logged; settings.integrations() exposes booleans only.
+Gaps (not defects): live Stripe NOT_TESTED (create mocked); each checkout click creates a
+new pending Payment + Stripe session (P1b: 2 rows) (L4); webhook inherits default anon
+throttle 60/min/IP (L5); no payout/dispute/partial-refund handling (partial refund keeps
+access by design).
+
+------------------------------------------------
+13. SECURE VIEWER AUDIT
+------------------------------------------------
+ Course -> Resource -> Access check   WORKING  HasCourseAccess resolves published resource+course (404 otherwise) then evaluate_access; 403 ACCESS_<state>
+ Order of checks                      IsApprovedStudent first, then course access
+ No public PDF URL                    VERIFIED  storage_key never serialized; no media/static route (V8: /media/, /private_media/, /static/ all 404); storage is private local dir or private S3
+ No direct download                   VERIFIED  only JSON with a rendered JPEG (base64); original bytes never leave the server
+ Page rendering                       WORKING   pypdfium2 server-side render; page 1,2 -> 200
+ Page param validation                WORKING   0, 3 (of 2), 999 -> 404 INVALID_PAGE with page_count; non-int not routed (404)
+ Zoom validation                      NOT IMPLEMENTED  no zoom param; ?zoom=9999 ignored (V4); width = platform viewer_render_width, scale clamped 0.2-4.0
+ Watermark                            WORKING   tiled diagonal watermark + footer band (name, e-mail, short id, course, UTC time, per-view watermark id); identity derived server-side
+ ViewActivity tracking                WORKING   one row per page render (3 rows after 3 renders, V5); duration endpoint own-views only, capped 4 h; another student's view id -> denied (V7)
+ Unauthorized access                  401 anon; 403 admin; 403 student without access
+ Expired access                       403 ACCESS_EXPIRED (X1)
+ Suspended student                    401 USER_INACTIVE (Z2)
+ Draft/unpublished resource           hidden from list (V1) and 404 on direct page
+ Headers                              page responses: Cache-Control no-store, private
+ Limits (inherent, not fixable by backend): a user can screenshot a displayed page; deterrent = per-view traceable watermark. Performance: each page request re-reads the whole PDF from storage and re-renders (throttle 180/min/user).
+
+------------------------------------------------
+14. PERMISSION / AUTHORIZATION AUDIT
+------------------------------------------------
+Method: every route x {GET,POST,PATCH,DELETE as defined} x {anon, student, admin} (E3 sweep).
+ Admin endpoint accessible by student         NONE (all 403)
+ Student endpoint without authentication      NONE (all 401, except intended PUB routes)
+ Protected endpoint accidentally public       NONE (only the 11 intended public routes; webhook is signature-gated)
+ Incorrect permission class                   NONE found. portal dashboard uses IsStudentRole (pending allowed) deliberately
+ Missing role check                           NONE; DEFAULT_PERMISSION_CLASSES = IsAuthenticated (safe default)
+ IDOR                                         NONE: access/<id>, payments/<id>, notifications/<id>, view_id are all filtered by owner (404, not 403); admin routes are unscoped by design
+ Object-level authorization bypass            NONE found
+ Privilege escalation                         NONE: role never read from request/token; admin PATCH on user changes full_name only; no role/status field is writable by students
+ Incorrect status check                       LOW only: L2 (grant on draft course), L3 (rejected terminal)
+ Notes: admin can suspend another admin (no "last admin" guard) (L6); notifications are shared by role but always scoped to request.user.
+
+------------------------------------------------
+15. DUPLICATE ROUTES
+------------------------------------------------
+None. No two patterns resolve to the same URL+method. The only repetition is the prefix
+"api/admin/" mounted 8 times with disjoint children, and the same leaf name "dashboard/"
+under api/student/ and api/admin/ (different prefixes).
+
+------------------------------------------------
+16. SHADOWED ROUTES
+------------------------------------------------
+None. No <path:...> catch-alls. Ordering checked: access/grant/ vs access/<uuid>/ (uuid
+converter cannot match "grant"); read-all/ vs <uuid>/ (same); api/student/{access,payments,
+learning-history}/ are mounted before api/student/ (no overlap with dashboard/).
+
+------------------------------------------------
+17. DUPLICATE URL NAMES
+------------------------------------------------
+| URL Name | Module | URL | Conflict |
+None. All 64 names are unique (plus "schema" and "docs").
+
+------------------------------------------------
+18. ENDPOINT WORKING STATUS
+------------------------------------------------
+PASS 64 / PARTIAL 0 / FAIL 0 / UNREACHABLE 0 / NOT_TESTED 0 at route level (every route
+reached, correct method set, correct auth, no 500). Caveat on NOT_TESTED sub-items:
+live Stripe checkout creation, Swagger UI page render, S3 storage backend, PostgreSQL/Redis
+runtime (suite ran on SQLite+locmem; memory notes a prior Postgres run), non-paid expiry
+renewal at runtime.
+Behavioural PARTIALs (workflow, not route failures): registration detail content, admin
+"Make Decision" per student, resources not nested under course, student profile fields.
+
+------------------------------------------------
+19. BROKEN / PARTIAL ENDPOINTS
+------------------------------------------------
+No FAIL. Route-level PARTIAL/gap list:
+| URL | Method | Expected (workflow) | Actual | Root cause | Severity |
+| /api/admin/registrations/<id>/decision/ (does not exist) | POST | immediate / payment-required / keep-pending decision | 404 | decision lives on course, not registration | MEDIUM (design gap) |
+| /api/admin/courses/<id>/ | PUT | full update | 405 | only PATCH implemented | LOW |
+| /api/admin/courses/<id>/unpublish/ | POST | unpublish | 404 | not implemented | LOW |
+| /api/admin/courses/<id>/lessons/ | * | lessons | 404 | no lesson model | LOW/INFO |
+| /api/viewing/resources/<id>/pages/<n>/?zoom= | GET | zoom validation | param ignored | no zoom feature | INFO |
+| /api/admin/registrations/<id>/ | GET | registration detail incl. status of accesses/payments | profile only | serializer scope | LOW |
+
+------------------------------------------------
+20. DATABASE TRUTH / FAKE DATA AUDIT
+------------------------------------------------
+Result: all business data comes from the database.
+ - Searched non-test code for mock/fake/dummy/sample/demo/lorem/placeholder/hard-coded:
+   only a docstring ("nothing is hardcoded") and a PIL rotate flag.
+ - No TODO/FIXME/NotImplementedError. One `pass` (accounts/services.py logout: swallowing an
+   invalid refresh token on purpose).
+ - `return None` (4) are legitimate (no-op branches); no `return []`/`return {}` in code.
+ - Static data only in: notifications._TEMPLATES (message wording), platform_settings.DEFAULTS
+   (names of settings), _ZERO_DECIMAL currency set. None is business state.
+ - Models inspected: User, AdminBackupCode, Course, CourseAccess, Resource, ViewActivity,
+   Payment, StripeEvent, Notification, AuditEvent, PlatformSettings (singleton pk=1 with
+   env fallback). Reports and dashboards are ORM aggregates.
+ - In-memory state: only Redis/locmem cache for lockout counters, OTPs, session activity and
+   a 60 s platform-settings cache; none is business truth. NOTE: with locmem (current dev
+   .env) that state is per-process and lost on restart; production needs real Redis.
+ - Frontend/localStorage business state: not applicable (no frontend present).
+ - Dev database backend/db.sqlite3 was NOT opened (read-only audit, test DB only).
+
+------------------------------------------------
+21. DEAD CODE AUDIT
+------------------------------------------------
+Static reference scan of every top-level def/class/method in non-test code:
+ USED: all views (all routed), serializers, services, permissions, models, utilities.
+ Items with a single textual reference are framework hooks (AppConfig classes, DRF
+ get_*/validate_* methods, OpenApiAuthenticationExtension, create_superuser, bulk_update
+ override) -> USED.
+ DEAD - CONFIRMED: none.
+ POSSIBLY UNUSED (dependency/config level, not code):
+   - psycopg[binary] (PostgreSQL driver) and django-redis are unused while .env points to
+     SQLite/locmem, but are required for the documented production setup -> USED in prod.
+   - django-storages[s3]: used only when STORAGE_BACKEND=s3.
+   - tests/docs_urls.py: used by tests only (intended).
+ No unused URL modules, templates, management commands (none exist), serializers or permissions.
+
+------------------------------------------------
+22. SCRATCH / TEMP / OLD FILE AUDIT
+------------------------------------------------
+Searched temp*/tmp*/old_*/backup*/copy*/sample*/demo*/mock*/dummy*/debug*/test.py/*.bak/*.orig:
+no matches. No commented-out routes/views. One settings file only. No duplicate tests found.
+Documentation/report files that are not code and may be stale (report only):
+   Edu_vauilt/DATABASE_AUDIT.md, Edu_vauilt/FINAL_BACKEND_AUDIT.md, backend/BACKEND_AUDIT.md
+   (earlier audits; docs/openapi.yaml, however, is identical in path set to the generated schema).
+Generated/dev artifacts (gitignored): backend/db.sqlite3, __pycache__, .venv.
+backend/.env is present (dev; DEBUG=True, SQLite, locmem). Values not reproduced here.
+Because the project is not a git repository, .gitignore protection of .env/db.sqlite3 only
+matters once it is placed under version control.
+
+------------------------------------------------
+23. FRONTEND API DEPENDENCY AUDIT
+------------------------------------------------
+There is no frontend directory or file in the workspace, so no API call sites could be
+inspected. Every backend URL is therefore:
+| Backend URL | Frontend File | Usage | Status |
+| (all 64 routes) | none found | n/a | UNKNOWN |
+The only consumer contract is docs/FRONTEND_HANDOFF.md (427 lines) and docs/openapi.yaml.
+The Stripe success/cancel URLs point to FRONTEND_URL + /payments/success|cancelled
+(frontend routes that must exist). Any URL restructure (section 28) must be coordinated
+with whichever frontend is built.
+
+------------------------------------------------
+24. OPENAPI BASELINE   (generated to scratchpad, not the project)
+------------------------------------------------
+Command: python manage.py spectacular --file <scratch>/before.yml   -> exit 0, 0 warnings/errors.
+ Total paths: 64          Total operations: 76
+ Admin paths: 33 (43 ops)       Student-area paths (api/student/*): 6 (7 ops)
+ Account paths: 13 (13 ops)     Payment paths (api/payment/*): 2 (2)
+ Viewing paths: 4 (4)           Notification paths: 4 (4)
+ Course (student) paths: 2      Settings paths: 2 (3 ops)
+ Reports: 6 (+ dashboard 1)     Audit logs: 2
+ Unexpected paths: none         Missing paths: none vs routed API
+ docs/openapi.yaml: identical path set (64) and operation count (76). Content-level diff
+ not performed.
+ (api/schema, api/docs are not in the schema by design.)
+
+------------------------------------------------
+25. DJANGO CHECK RESULTS
+------------------------------------------------
+manage.py check -> "System check identified no issues (0 silenced)". Exit 0.
+
+------------------------------------------------
+26. MIGRATION CHECK RESULTS
+------------------------------------------------
+manage.py makemigrations --check --dry-run -> "No changes detected". Exit 0.
+
+------------------------------------------------
+27. TEST SUITE RESULTS
+------------------------------------------------
+| Command | Result | Passed | Failed | Skipped | Error |
+| python manage.py check | OK | - | - | - | none |
+| python manage.py makemigrations --check --dry-run | OK | - | - | - | none |
+| python manage.py spectacular (to scratch) | OK | - | - | - | none |
+| pytest -q (pytest.ini: in-memory SQLite, locmem cache, throttles raised) | OK | 541 | 0 | 11 | none |
+| audit probe: route sweep (E3a) | OK | 2 | 0 | 0 | none |
+| audit probe: end-to-end workflow (E3b) | OK | 1 | 0 | 0 | none (two early probe failures were my own fixtures: shared mocked Stripe session id; $49 fixture vs $10 course - the latter shows the amount-mismatch guard working) |
+The 11 skips are test_security.py:46 "public by design" (parametrised over the public routes).
+Not run: tests on PostgreSQL/Redis, live Stripe, S3.
+
+------------------------------------------------
+28. RECOMMENDED URL RESTRUCTURE   (recommendation only)
+------------------------------------------------
+api/
+  accounts/                register, login, logout, refresh, me, password-*   (shared; keep)
+  admin/
+    login/                 (+ 2fa/setup|confirm|verify/)    <- move from accounts/admin/
+    course/                CRUD, publish, archive (add unpublish), resources nested or ?course=
+    students/              list/detail, registrations, approve/reject, suspend/reinstate,
+                           per-student access + payments  <- from users/, registrations/, access/, payments/
+    reports/               overview, users, courses, access, payments, activity (+ dashboard)
+    audit-logs/            keep
+    settings/              keep
+    notifications/         admin view of notifications
+  student/                 dashboard, profile, course, access, payments, viewing, notifications,
+                           learning-history  (pull course/, viewing/, payment/create-checkout,
+                           notifications under student/)
+  payment/stripe/webhook/  keep OUTSIDE student/admin (called by Stripe, no JWT)
+Cheapest low-risk route to the target: keep module code, change only the prefixes in
+config/urls.py, move the view module paths, and add the missing "decision" use case as an
+explicit endpoint (see Phase 2). Because old URLs currently return 404 by project decision,
+expect a coordinated frontend change.
+
+------------------------------------------------
+29. OLD URL -> NEW URL MAPPING
+------------------------------------------------
+api/accounts/admin/login/                 -> api/admin/login/
+api/accounts/admin/2fa/setup/             -> api/admin/login/2fa/setup/
+api/accounts/admin/2fa/confirm/           -> api/admin/login/2fa/confirm/
+api/accounts/admin/2fa/verify/            -> api/admin/login/2fa/verify/
+api/admin/courses/                        -> api/admin/course/
+api/admin/courses/<id>/                   -> api/admin/course/<id>/
+api/admin/courses/<id>/publish|archive/   -> api/admin/course/<id>/publish|archive/
+api/admin/resources/ ...                  -> api/admin/course/<course_id>/resources/ ... (or unchanged)
+api/admin/users/ ...                      -> api/admin/students/ ...
+api/admin/users/<id>/reactivate/          -> api/admin/students/<id>/reinstate/
+api/admin/registrations/ ...              -> api/admin/students/registrations/ ...
+api/admin/access/ ...                     -> api/admin/students/<id>/access/ (or course/<id>/access/)
+api/admin/payments/ ...                   -> api/admin/students/<id>/payments/ (or unchanged)
+api/admin/dashboard/                      -> api/admin/reports/dashboard/
+api/notifications/                        -> api/admin/notifications/ and api/student/notifications/
+api/course/ ...                           -> api/student/course/ ...
+api/viewing/ ...                          -> api/student/viewing/ ...
+api/payment/create-checkout/              -> api/student/payment/create-checkout/
+api/accounts/me/ (student profile)        -> api/student/profile/ (keep accounts/me/ for shared use)
+api/payment/stripe/webhook/               -> unchanged
+api/admin/audit-logs/, api/admin/settings/ -> unchanged
+
+------------------------------------------------
+30. FILES REQUIRING APPROVAL BEFORE DELETION
+------------------------------------------------
+Nothing in code qualifies as dead. Candidates for the owner to decide (NOT deleted):
+  - Edu_vauilt/DATABASE_AUDIT.md, Edu_vauilt/FINAL_BACKEND_AUDIT.md, backend/BACKEND_AUDIT.md
+    (superseded by this audit if you agree)
+  - backend/db.sqlite3 (dev DB; delete only if recreating via migrate is acceptable)
+  - backend/.env (keep; ensure it never gets committed)
+
+------------------------------------------------
+31. CRITICAL ISSUES
+------------------------------------------------
+None found.
+
+------------------------------------------------
+32. MEDIUM ISSUES
+------------------------------------------------
+M1  Session state is ONE Redis key per user (eduvault:session:<user_id>). Logout, password
+    change or suspension on one device ends the session for every device (A15: after a second
+    login/logout the first admin session returned 401). Also the single key means devices share
+    one inactivity window. Fix idea: key the session by token jti/session id.
+M2  Admin workflow step "Make Decision" (Immediate / Payment Required / Keep Pending) is not a
+    registration-level feature (G1). Needs a product decision before Phase 2: either keep
+    course-level modes and add a per-student/per-course "decision" endpoint, or redefine the
+    workflow around course modes.
+M3  First-time admin 2FA enrolment needs only the admin password: if an admin account exists
+    with two_factor_enabled=False, anyone who knows the password can enrol their own
+    authenticator and obtain tokens. Mitigations: provision TOTP out-of-band / require an
+    existing admin to enable it / invite token.
+M4  Login lockout is keyed by e-mail only (5 failures -> 15 min), so a third party can lock a
+    known account (including an admin) out indefinitely by repeating failures. IP is not part
+    of the key. (Throttles are per-IP, which helps only partly.)
+M5  Admin notifications are PARTIAL: the endpoint works, but nothing creates admin-targeted
+    notifications (new registration, access request, payment) - admins only get security
+    notices - so the "admin notifications" target has no useful feed.
+M6  URL layout differs from the required target (G2). Pure rename work, but breaking.
+
+------------------------------------------------
+33. LOW ISSUES
+------------------------------------------------
+L1  PUT on course not supported; no course unpublish; no lessons (G3).
+L2  Admin can grant access on a draft/archived course (AccessGrantSerializer uses Course.objects.all()); harmless (viewer evaluates as unavailable) but leaves stray records (probe R5 201).
+L3  Rejected registration is terminal: re-approve returns 409; there is no re-open. Only ACTIVE users can be suspended.
+L4  Every checkout click creates a new pending Payment and Stripe session (no reuse of an open one) (P1b).
+L5  Stripe webhook route uses default AnonRateThrottle (60/min/IP); a burst could return 429 (Stripe retries). Consider exempting.
+L6  An admin can suspend another admin; no "last active admin" protection.
+L7  POST /api/accounts/register/ returns 409 EMAIL_ALREADY_REGISTERED (account enumeration; login/forgot-password do not leak).
+L8  Viewer re-reads the whole PDF per page and renders synchronously; fine at current limits, watch under load.
+L9  API docs (schema/docs) disabled when DEBUG off; if wanted in staging, must be flagged on explicitly.
+L10 Registration detail returns profile only (no related access/payment summary).
+L11 Dev .env uses locmem cache: lockout, OTP and sessions are per-process and reset on restart; make sure production uses Redis (settings default would otherwise silently weaken security).
+L12 Two-factor challenge token is replayable within its 300 s window (still needs a valid TOTP/backup code).
+
+------------------------------------------------
+34. PHASE 2 RECOMMENDATIONS   (not started)
+------------------------------------------------
+1. Decide G1/M2 (registration decision semantics) first; it is the only real workflow gap.
+2. Apply the URL restructure of sections 28-29 in config/urls.py + per-app url groups; update
+   tests/test_url_layout.py, docs/openapi.yaml and FRONTEND_HANDOFF.md together.
+3. Add admin-targeted notifications (new registration, access request, payment) (M5).
+4. Make sessions per-device (M1); address M3 (admin 2FA enrolment policy) and M4 (lockout key).
+5. Add course unpublish and (if needed) PUT; add nested course resources route.
+6. Re-verify on PostgreSQL + Redis and with a live Stripe test-mode key after any query change.
+7. Re-run this audit's probes against the new layout.
+
+------------------------------------------------
+35. FINAL SUMMARY
+------------------------------------------------
+Backend is functional and secure at the endpoint level; the gaps are the missing
+per-registration decision step and the URL layout differences from the target.
+
+================================================
+FINAL AUDIT SUMMARY
+================================================
+
+Total URL patterns: 64 leaf patterns under 16 api/ includes (+2 conditional docs routes);
+                    18 path() entries in config/urls.py; 0 re_path
+Total unique endpoints: 64
+Total HTTP operations: 76
+
+WORKING: 64
+PARTIAL: 0 (route level)  / 6 behavioural workflow gaps (section 19)
+FAILED: 0
+UNREACHABLE: 0
+NOT TESTED: 0 routes (sub-items not tested: live Stripe, S3, Postgres/Redis, Swagger page)
+
+PUBLIC ENDPOINTS: 11 paths (all POST)  [+ conditional schema/docs]
+STUDENT ENDPOINTS: 13 paths / 14 ops (+ 7 paths / 8 ops shared by any authenticated user)
+ADMIN ENDPOINTS: 33 paths / 43 ops
+
+ADMIN WORKFLOW (20 steps audited):
+WORKING: 15
+PARTIAL: 4   (registration detail, immediate-access decision, keep-pending, course resources nesting)
+MISSING: 1   (per-registration "payment required" decision)
+BROKEN: 0
+(live-Stripe leg of checkout counted WORKING with mocked Stripe session creation)
+
+STUDENT WORKFLOW (16 steps audited):
+WORKING: 15
+PARTIAL: 1   (profile; non-paid expiry renewal untested at runtime)
+MISSING: 0
+BROKEN: 0
+
+DUPLICATE ROUTES: 0
+SHADOWED ROUTES: 0
+DUPLICATE URL NAMES: 0
+
+PERMISSION ISSUES: 0 (L2, L6 low-severity logic notes)
+AUTHENTICATION ISSUES: 0 critical; 3 design weaknesses (M1, M3, M4)
+COURSE ACCESS ISSUES: 0 (single central evaluate_access; L2 only)
+PAYMENT ISSUES: 0 defects (L4, L5 low)
+VIEWER SECURITY ISSUES: 0 (zoom feature absent; screenshot risk inherent)
+
+FAKE/MOCK ENDPOINTS: 0
+DEAD CODE: 0 confirmed
+POSSIBLY UNUSED FILES: 0 code files; 3 superseded audit documents (section 30)
+SCRATCH FILES: 0
+
+FRONTEND API CONFLICTS: UNKNOWN (no frontend in the workspace)
+
+RECOMMENDED URL CHANGES: 14 groups (sections 7, 28)
+
+OLD URL -> NEW URL: see section 29
+
+FILES REQUIRING APPROVAL: DATABASE_AUDIT.md, FINAL_BACKEND_AUDIT.md, backend/BACKEND_AUDIT.md (optional), backend/db.sqlite3 (optional)
+
+MODEL/SCHEMA CHANGES REQUIRED:
+NO for the URL restructure.
+YES only if G1/M2 is resolved with a stored per-student decision (e.g. a field/table on
+CourseAccess or User); NO if resolved with the existing CourseAccess + Course.access_mode.
+
+PHASE 1 STATUS:
+AUDIT COMPLETE — NO APPLICATION CODE CHANGED
+
+
+
+
+
+================================================
+EDUVAULT BACKEND SECURITY AUDIT - CURRENT STATE (after Phase 3)
+================================================
+AUDIT DATE: 2026-10-05
+PROJECT:    EduVault Django/DRF backend (Edu_vauilt/backend)
+This file REPLACES the stale Phase 1 report. Section A tells you what is history,
+what is resolved, what is current and what remains. Nothing below is claimed PASS
+unless it was run (evidence column / test names).
+No secrets, tokens, OTPs, TOTP secrets, backup codes or .env values appear here.
+
+================================================
+A. HISTORY, RESOLVED, CURRENT, REMAINING
+================================================
+HISTORICAL (Phase 1 findings; URLs in them are OLD and no longer exist)
+  H1  Layout differed from the target (accounts/admin/login, admin/courses, admin/users, api/course ...).
+  H2  No per-student "Make Decision" step.
+  H3  M1 single session key per user; M3 password-only admin TOTP enrolment; M4 lockout keyed by e-mail only;
+      L12 2FA challenge replayable.
+RESOLVED IN PHASE 2
+  R1  URL layout restructured to the target (section 1/23). Old URLs return 404, no aliases.
+  R2  POST /api/admin/students/{id}/decision/ (immediate | payment_required | pending); CourseAccess.payment_required
+      (migration access/0003, now applied to the dev DB only).
+RESOLVED IN PHASE 3 (this phase)
+  P1  Per-device sessions (M1)            P4  TOTP replay protection (part of L12)
+  P2  Refresh-token reuse detection       P5  Admin TOTP enrolment needs an out-of-band code (M3)
+  P3  Lockout keyed by (email, IP) (M4)   P6  Security test suite (98 new tests)
+CURRENT REMAINING (see section 20): Redis requirement/eviction, email-wide lockout trade-off, 2FA challenge token
+  replay inside 300 s, webhook default throttle, admin-can-suspend-admin, register e-mail enumeration, live
+  Stripe/Postgres/Redis not tested, admin notifications + course PUT/unpublish deliberately NOT done (later phases).
+
+================================================
+1. CURRENT URL STRUCTURE (unchanged by Phase 3; verified by tests)
+================================================
+api/accounts/        register login logout refresh me password-change forgot-password(+verify) reset-password
+api/admin/login/     "" (email+password), 2fa/setup, 2fa/confirm, 2fa/verify
+api/admin/course/    "", <id>/, <id>/publish, <id>/archive, resources/ (+<id>/, validate, publish, archive)
+api/admin/students/  "", <id>/, <id>/suspend, <id>/reinstate, <id>/decision, registrations/(+<id>, approve, reject),
+                     access/(+grant, <id>), payments/(+<id>)
+api/admin/reports/   dashboard, overview, users, courses, access, payments, activity
+api/admin/audit-logs/  "", <id>/        api/admin/settings/ "", test-email/     api/admin/notifications/ (4 routes)
+api/student/         dashboard profile course(+<id>) viewing/(courses/<id>/resources, resources/<id>, pages/<n>, activity)
+                     access(+<id>) payment/create-checkout payments(+<id>) learning-history notifications(4 routes)
+api/payment/stripe/webhook/   (Stripe only, no JWT)
+api/schema/, api/docs/        only when API_DOCS_ENABLED
+OpenAPI: 70 paths, 83 operations, 0 spectacular warnings. Removed old URLs still 404 (test_removed_urls_stay_removed,
+test_old_urls_are_gone).
+
+================================================
+2. CURRENT ENDPOINT INVENTORY
+================================================
+70 paths / 83 operations. Public: accounts register/login/refresh/forgot/verify/reset (6), admin login + 3 x 2fa (4),
+webhook (1) = 11 paths. Any-authenticated: logout, me, password-change (3). Student-only: the api/student/* routes
+(+ profile, notifications). Admin-only: every api/admin/* route except login. Auth class on all non-public routes:
+SessionAwareJWTAuthentication; default permission IsAuthenticated; role classes IsAdminRole / IsStudentRole /
+IsApprovedStudent (+ HasCourseAccess on the viewer).
+
+================================================
+3. CURRENT ENDPOINT STATUS
+================================================
+Every route re-swept in tests (test_security.py parametrised over all routes: anonymous -> 401, student -> 403 on
+admin routes, admin -> 403/404 on student routes) and in TestRoleSeparation. All PASS. 683 tests pass.
+
+================================================
+4. ADMIN WORKFLOW STATUS
+================================================
+Login (email+password) PASS | TOTP (mandatory, enrolment gated) PASS | Dashboard PASS | Registrations list/detail PASS |
+Approve/Reject PASS | Decision immediate/payment_required/pending PASS (tests/test_student_decision.py; authorization in
+TestRoleSeparation) | Users/Students suspend/reinstate PASS | Courses/resources PASS | Settings PASS | Stripe-driven access
+activation PASS (mocked Stripe create; signed webhook tested).
+Known gaps (separate phases): admin notifications feed, course PUT/unpublish/lessons.
+
+================================================
+5. STUDENT WORKFLOW STATUS
+================================================
+Login/invalid/pending/active/suspended PASS | Dashboard, profile, courses, notifications PASS | Course access states PASS
+| Viewer (watermarked pages, activity) PASS | Checkout -> webhook -> access PASS | Expiry -> viewer denied, renewal
+checkout PASS (paid courses).
+
+================================================
+6. AUTHENTICATION SECURITY STATUS: PASS
+================================================
+- Admin: password -> challenge token only (no JWT) -> TOTP/backup code -> tokens. A student cannot get an admin
+  challenge (401); an admin cannot use the student login (401). Challenge token is not accepted as a bearer (401).
+- Invalid credentials return one generic 401 for wrong password and for unknown e-mail (identical JSON, tested).
+- Suspended: login 403 ACCOUNT_SUSPENDED (only after a correct password), existing tokens 401, refresh 401.
+- Pending/rejected students may sign in but only reach dashboard/me (403 REGISTRATION_PENDING/REJECTED elsewhere).
+- Argon2 hashing; password policy; OTP password reset with attempt cap; reset token bound to the password hash.
+
+================================================
+7. TOTP STATUS: PASS
+================================================
+Policy: ADMIN TOTP = MANDATORY. An admin cannot reach any admin API without a verified TOTP/backup code (tested).
+- First-time enrolment now requires an out-of-band enrollment code (setting ADMIN_2FA_ENROLLMENT_CODE_REQUIRED, default
+  True): `python manage.py issue_admin_2fa_enrollment <admin-email>`. Signed, stateless, 24 h (ADMIN_2FA_ENROLLMENT_CODE_HOURS),
+  bound to the user and password hash, dead once 2FA is enabled or the password changes. Wrong/missing code -> 401
+  INVALID_TWO_FACTOR_CODE, audited (auth.2fa.failed), counts toward the 2FA lockout. Another admin's code is useless.
+  The command refuses students and already-enrolled admins.
+- Replay: an accepted TOTP code is single-use (cache add, ~2 min). Tested.
+- Backup codes: 8, keyed-hash stored (64-hex), one-time atomic claim; reuse -> 401. TOTP secret Fernet-encrypted at
+  rest (stored value != secret, tested). Suspended admin: challenge verify 401, login 403.
+- Students are never put through TOTP (tested).
+Contract change: setup accepts an extra field `enrollment_code`. Documented in FRONTEND_HANDOFF.md and OpenAPI.
+
+================================================
+8. SESSION / TOKEN STATUS: PASS (needs Redis in production, see 20)
+================================================
+- Each sign-in = its own session: JWT claims `sid` (device) and `ep` (per-user epoch). Inactivity key per (user, sid).
+- Logout ends only that device (tested with two devices). Inactivity expiry is per device (tested).
+- Password change/reset and suspension blacklist all outstanding refresh tokens AND bump the epoch, so every access
+  token of every device dies immediately (tested). The device that changed the password gets fresh tokens.
+- Tokens without sid/ep (not issued by the login flow) are rejected.
+- Access 15 min, refresh 7 days, rotation + blacklist-after-rotation. Expired, garbage, access-as-refresh, logged-out,
+  suspended-user refresh tokens all -> 401 INVALID_REFRESH_TOKEN (tested).
+- Reuse detection: replaying a rotated (blacklisted but validly signed, unexpired) refresh token ends that device's
+  session, including the newly issued token, and writes audit event auth.refresh.reuse_detected (token never logged;
+  only the first 8 chars of the session id). Other devices are unaffected (tested).
+
+================================================
+9. LOCKOUT / RATE-LIMIT STATUS: PASS
+================================================
+- Key = (email, client IP) with LOGIN_MAX_ATTEMPTS (default 5) -> 429 ACCOUNT_LOCKED for LOGIN_LOCKOUT_SECONDS (15 min).
+  One client can no longer lock a victim out from other IPs; other accounts from the same IP are unaffected (tested).
+- Backstop: per-email counter across all IPs at 4 x the limit (EMAIL_WIDE_LOCK_FACTOR) against distributed guessing (tested).
+- Unknown e-mails behave identically to real ones (no enumeration signal). Lockout expires (tested with a 1 s lock) and
+  a successful login clears both counters. Admin login uses the same mechanism (tested). 2FA has its own per-user lock.
+- State lives in the Django cache (Redis in production, as already required). IP comes from get_client_ip
+  (X-Forwarded-For honoured only with TRUST_PROXY_HEADERS). DRF scoped throttles (per-IP) remain in front.
+
+================================================
+10. PERMISSION STATUS: PASS
+================================================
+Matrix tested for 7 admin and 7 student representative endpoints plus the full-route sweeps: anonymous 401, student->admin
+403, admin->admin 200, student->student 200, admin->student 403. Role is read from the DB, never from the request or
+token; PATCH /accounts/me/ ignores role/status/is_staff (tested). Decision endpoint: anon 401, student 403, admin 200.
+
+================================================
+11. IDOR / OBJECT AUTHORIZATION STATUS: PASS
+================================================
+Tested: another student's notification (read/delete -> 404, absent from list), payment (404), access record (404),
+viewing history (own only), viewer activity of another student's view id (404), profile (own only).
+Audit log: students 403; audit events are read-only even for admins (patch/put/delete/post -> 405).
+
+================================================
+12. COURSE-ACCESS SECURITY: PASS
+================================================
+Viewer matrix tested: active 200; pending 403; payment_required 403 (also via the admin decision); expired 403
+ACCESS_EXPIRED; revoked 403; suspended student 401; archived/unpublished resource 404; invalid pages (0, past end, -1) 404.
+Single decision point: access.services.evaluate_access.
+
+================================================
+13. PAYMENT / WEBHOOK SECURITY: PASS (live Stripe NOT_TESTED)
+================================================
+Unsigned / wrong secret / stale / tampered / malformed payloads -> 400 INVALID_SIGNATURE with no traceback; duplicate event
+idempotent (StripeEvent unique id); amount/currency mismatch refused; a student POSTing to the webhook or sending
+"status": "paid" to checkout cannot create access or a paid payment (tested). Only the verified webhook activates access.
+
+================================================
+14. AUDIT-LOG SECURITY: PASS
+================================================
+Events present for login success/failed/locked, logout, 2FA enabled/failed/backup used, refresh reuse, password events,
+registration/user/course/resource/access/payment actions, settings changes. A test dumps all audit rows after a login,
+failed login and logout and asserts the password, the wrong password and the access/refresh tokens do not appear.
+A guard test fails if a new audit action is never asserted. Ordinary students cannot read or alter audit data.
+
+================================================
+15. FAKE / MOCK / DEAD-CODE FINDINGS
+================================================
+None added. Phase 1 scan found no fake data and no confirmed dead code. Phase 3 added only used code (new service
+functions, one serializer, one management command). A full dead-code re-scan was NOT repeated in this phase.
+
+================================================
+16. API ERROR SECURITY: PASS
+================================================
+All errors use the existing envelope. Tested: invalid path params produce a 404 envelope with no traceback, site-packages
+path, SECRET or ORM text. Auth failures are generic; Redis/DB outages map to 503 without internals (existing handler).
+
+================================================
+17-19. VALIDATION RESULTS
+================================================
+python manage.py check                        -> no issues
+python manage.py makemigrations --check       -> No changes detected (Phase 3 created NO migrations)
+python manage.py showmigrations               -> access/0003 was unapplied on the dev SQLite DB; applied with `migrate`
+                                                 (dev DB only; no flush/reset; nothing deleted)
+python manage.py spectacular                  -> 0 warnings; docs/openapi.yaml regenerated (70 paths, 83 ops); the
+                                                 "after-security" copy was written to a scratch path; no secret strings in it
+pytest                                        -> 683 passed, 0 failed, 11 skipped (same 11 "public by design" skips)
+Baseline was 585/11. Delta: +98 tests (tests/test_phase3_security.py) and 0 regressions. Existing tests were adapted,
+not weakened: TOTP calls use a replay-safe helper (next_totp), the 2FA setup calls pass the enrollment code, and
+test_refresh_rotates_and_blacklists now asserts the NEW reuse-detection behaviour (replaying a rotated token ends the
+session) instead of the old "new token still works".
+Tests ran on in-memory SQLite + locmem cache only.
+
+================================================
+20. REMAINING RISKS
+================================================
+1. Production MUST run Redis. Sessions, epochs, lockout counters, TOTP replay marks live in the cache. With the dev
+   locmem cache they are per-process and reset on restart. Epoch keys have no TTL: configure Redis eviction so they are not
+   evicted; if lost, the safe failure is that all tokens are rejected (users sign in again), never a bypass.
+2. Email-wide lock backstop (20 failures within 15 min across IPs) can still be abused to lock a known e-mail for
+   15 minutes; accepted trade-off against distributed brute force.
+3. 2FA challenge token (5 min) is replayable within its window; it still needs a valid, now single-use, TOTP/backup code.
+4. Enrollment code is reusable until 2FA is enabled, the password changes or it ages out (stateless by design so the CLI
+   works with any cache); treat it like a password and hand it over out of band. First admin created with
+   `createsuperuser` must run the command once (documented).
+5. Concurrent refresh with the same token (two tabs) is treated as reuse and ends that device's session.
+6. Webhook route still inherits the default anonymous throttle (60/min/IP). Admin can suspend another admin (no last-admin
+   guard). POST /accounts/register/ reveals whether an e-mail exists (409).
+7. NOT TESTED: PostgreSQL, real Redis, live Stripe, S3 storage, Swagger page rendering.
+8. Out of scope by instruction: admin notifications, course PUT/unpublish.
+
+================================================
+21. FILES CHANGED IN PHASE 3
+================================================
+accounts/services.py            sessions (sid/epoch), refresh reuse, lockout key, TOTP replay, enrollment code
+accounts/authentication.py      session check uses sid/epoch
+accounts/serializers.py         TwoFactorSetupSerializer (enrollment_code)
+accounts/views.py               setup view uses it and passes IP
+accounts/management/__init__.py, commands/__init__.py, commands/issue_admin_2fa_enrollment.py   (new)
+audit/models.py                 + Actions.REFRESH_REUSE_DETECTED
+config/settings.py              + ADMIN_2FA_ENROLLMENT_CODE_REQUIRED / _HOURS
+.env.example                    + the two settings (documented)
+docs/openapi.yaml, docs/FRONTEND_HANDOFF.md   regenerated / updated
+tests/conftest.py (next_totp helper, enrollment code), tests/test_accounts.py, tests/test_audit_coverage.py (adapted)
+tests/test_phase3_security.py   (new, 98 tests)
+empty.txt (this report)
+Dev DB: backend/db.sqlite3 migrated to access/0003 (data untouched).
+FILES DELETED: none.      MIGRATIONS CREATED IN PHASE 3: none.
+URLs CHANGED IN PHASE 3: none (Phase 2 changes are in the historical section and docs/FRONTEND_HANDOFF.md).
+API CONTRACT CHANGE: 2fa/setup takes `enrollment_code`; revoked-all semantics and reuse detection described in the handoff.
+
+================================================
+24. FINAL SECURITY SUMMARY
+================================================
+Per-device sessions: PASS            Refresh-token security: PASS          Login lockout/rate limiting: PASS
+Admin TOTP: PASS                     Admin/student separation: PASS        Object-level authorization: PASS
+Course-access security: PASS         Stripe webhook security: PASS (live Stripe not tested)
+Audit-log security: PASS             API error security: PASS
+Tests 683 passed / 0 failed / 11 skipped; check PASS; migration check PASS; OpenAPI PASS; regression PASS.
+Next recommended phase: course PUT/unpublish (then admin notifications).

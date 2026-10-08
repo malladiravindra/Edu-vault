@@ -1,0 +1,11 @@
+# Self-contained copy of the ignores that matter if backend/ is ever used as its own repository root
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+*.sqlite3
+private_media/
+staticfiles/

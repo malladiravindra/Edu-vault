@@ -1,0 +1,1149 @@
+[
+ {
+  "url": "/api/accounts/forgot-password/",
+  "methods": [
+   "POST"
+  ],
+  "view": "PasswordResetRequestView",
+  "view_module": "accounts.views",
+  "name": "auth-forgot-password",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/forgot-password/verify/",
+  "methods": [
+   "POST"
+  ],
+  "view": "PasswordResetVerifyView",
+  "view_module": "accounts.views",
+  "name": "auth-forgot-password-verify",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/login/",
+  "methods": [
+   "POST"
+  ],
+  "view": "LoginView",
+  "view_module": "accounts.views",
+  "name": "auth-login",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/logout/",
+  "methods": [
+   "POST"
+  ],
+  "view": "LogoutView",
+  "view_module": "accounts.views",
+  "name": "auth-logout",
+  "permissions": [
+   "IsAuthenticated"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/me/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "MeView",
+  "view_module": "accounts.views",
+  "name": "auth-me",
+  "permissions": [
+   "IsAuthenticated"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/password-change/",
+  "methods": [
+   "POST"
+  ],
+  "view": "PasswordChangeView",
+  "view_module": "accounts.views",
+  "name": "auth-password-change",
+  "permissions": [
+   "IsAuthenticated"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/refresh/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RefreshView",
+  "view_module": "accounts.views",
+  "name": "auth-refresh",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/register/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegisterView",
+  "view_module": "accounts.views",
+  "name": "auth-register",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/register/send-otp/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegistrationSendOtpView",
+  "view_module": "accounts.views",
+  "name": "auth-register-send-otp",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/register/verify-otp/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegistrationVerifyOtpView",
+  "view_module": "accounts.views",
+  "name": "auth-register-verify-otp",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/accounts/reset-password/",
+  "methods": [
+   "POST"
+  ],
+  "view": "PasswordResetConfirmView",
+  "view_module": "accounts.views",
+  "name": "auth-reset-password",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/audit-logs/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AuditEventListView",
+  "view_module": "audit.views",
+  "name": "audit-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/audit-logs/<uuid:event_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AuditEventDetailView",
+  "view_module": "audit.views",
+  "name": "audit-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/",
+  "methods": [
+   "GET",
+   "POST"
+  ],
+  "view": "AdminCourseListCreateView",
+  "view_module": "courses.views",
+  "name": "admin-course-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/<uuid:course_id>/",
+  "methods": [
+   "DELETE",
+   "GET",
+   "PATCH",
+   "PUT"
+  ],
+  "view": "AdminCourseDetailView",
+  "view_module": "courses.views",
+  "name": "admin-course-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/<uuid:course_id>/archive/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminCourseArchiveView",
+  "view_module": "courses.views",
+  "name": "admin-course-archive",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/<uuid:course_id>/publish/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminCoursePublishView",
+  "view_module": "courses.views",
+  "name": "admin-course-publish",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/<uuid:course_id>/unpublish/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminCourseUnpublishView",
+  "view_module": "courses.views",
+  "name": "admin-course-unpublish",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/",
+  "methods": [
+   "GET",
+   "POST"
+  ],
+  "view": "AdminResourceListCreateView",
+  "view_module": "resources.views",
+  "name": "admin-resource-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/<uuid:resource_id>/",
+  "methods": [
+   "DELETE",
+   "GET",
+   "PATCH"
+  ],
+  "view": "AdminResourceDetailView",
+  "view_module": "resources.views",
+  "name": "admin-resource-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/<uuid:resource_id>/archive/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminResourceArchiveView",
+  "view_module": "resources.views",
+  "name": "admin-resource-archive",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/<uuid:resource_id>/publish/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminResourcePublishView",
+  "view_module": "resources.views",
+  "name": "admin-resource-publish",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/<uuid:resource_id>/replace/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminResourceReplaceView",
+  "view_module": "resources.views",
+  "name": "admin-resource-replace",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/course/resources/<uuid:resource_id>/validate/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminResourceValidateView",
+  "view_module": "resources.views",
+  "name": "admin-resource-validate",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/login/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminLoginView",
+  "view_module": "accounts.views",
+  "name": "auth-admin-login",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/login/2fa/verify/",
+  "methods": [
+   "POST"
+  ],
+  "view": "TwoFactorVerifyView",
+  "view_module": "accounts.views",
+  "name": "auth-2fa-verify",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/notifications/",
+  "methods": [
+   "GET"
+  ],
+  "view": "NotificationListView",
+  "view_module": "notifications.views",
+  "name": "admin-notification-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/admin/notifications/<uuid:notification_id>/",
+  "methods": [
+   "DELETE",
+   "GET"
+  ],
+  "view": "NotificationDetailView",
+  "view_module": "notifications.views",
+  "name": "admin-notification-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/admin/notifications/<uuid:notification_id>/read/",
+  "methods": [
+   "POST"
+  ],
+  "view": "NotificationReadView",
+  "view_module": "notifications.views",
+  "name": "admin-notification-read",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/admin/notifications/read-all/",
+  "methods": [
+   "POST"
+  ],
+  "view": "NotificationReadAllView",
+  "view_module": "notifications.views",
+  "name": "admin-notification-read-all",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/admin/profile/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "AdminProfileView",
+  "view_module": "accounts.views",
+  "name": "admin-profile",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/access/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AccessReportView",
+  "view_module": "reports.views",
+  "name": "report-access",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/activity/",
+  "methods": [
+   "GET"
+  ],
+  "view": "ActivityReportView",
+  "view_module": "reports.views",
+  "name": "report-activity",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/courses/",
+  "methods": [
+   "GET"
+  ],
+  "view": "CoursesReportView",
+  "view_module": "reports.views",
+  "name": "report-courses",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/dashboard/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminDashboardView",
+  "view_module": "reports.views",
+  "name": "admin-dashboard",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/overview/",
+  "methods": [
+   "GET"
+  ],
+  "view": "OverviewReportView",
+  "view_module": "reports.views",
+  "name": "report-overview",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/payments/",
+  "methods": [
+   "GET"
+  ],
+  "view": "PaymentsReportView",
+  "view_module": "reports.views",
+  "name": "report-payments",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/reports/users/",
+  "methods": [
+   "GET"
+  ],
+  "view": "UsersReportView",
+  "view_module": "reports.views",
+  "name": "report-users",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/settings/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "AdminSettingsView",
+  "view_module": "platform_settings.views",
+  "name": "admin-settings",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/settings/test-email/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminTestEmailView",
+  "view_module": "platform_settings.views",
+  "name": "admin-settings-test-email",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminUserListView",
+  "view_module": "accounts.views",
+  "name": "admin-user-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/<uuid:user_id>/",
+  "methods": [
+   "DELETE",
+   "GET",
+   "PATCH"
+  ],
+  "view": "AdminUserDetailView",
+  "view_module": "accounts.views",
+  "name": "admin-user-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/<uuid:user_id>/decision/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminStudentDecisionView",
+  "view_module": "access.views",
+  "name": "admin-student-decision",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/<uuid:user_id>/reinstate/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminUserReactivateView",
+  "view_module": "accounts.views",
+  "name": "admin-user-reinstate",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/<uuid:user_id>/suspend/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminUserSuspendView",
+  "view_module": "accounts.views",
+  "name": "admin-user-suspend",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/access/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminAccessListView",
+  "view_module": "access.views",
+  "name": "admin-access-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/access/<uuid:access_id>/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "AdminAccessDetailView",
+  "view_module": "access.views",
+  "name": "admin-access-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/access/grant/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminAccessGrantView",
+  "view_module": "access.views",
+  "name": "admin-access-grant",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/approval-requests/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminRegistrationListView",
+  "view_module": "accounts.views",
+  "name": "admin-approval-request-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": [
+   "default_status"
+  ]
+ },
+ {
+  "url": "/api/admin/students/approval-requests/<uuid:user_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminRegistrationDetailView",
+  "view_module": "accounts.views",
+  "name": "admin-approval-request-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/approval-requests/<uuid:user_id>/approve/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminRegistrationApproveView",
+  "view_module": "accounts.views",
+  "name": "admin-approval-request-approve",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/approval-requests/<uuid:user_id>/reject/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminRegistrationRejectView",
+  "view_module": "accounts.views",
+  "name": "admin-approval-request-reject",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/payments/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminPaymentListView",
+  "view_module": "payments.views",
+  "name": "admin-payment-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/payments/<uuid:payment_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminPaymentDetailView",
+  "view_module": "payments.views",
+  "name": "admin-payment-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/registrations/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminRegistrationListView",
+  "view_module": "accounts.views",
+  "name": "admin-registration-list",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/registrations/<uuid:user_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AdminRegistrationDetailView",
+  "view_module": "accounts.views",
+  "name": "admin-registration-detail",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/registrations/<uuid:user_id>/approve/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminRegistrationApproveView",
+  "view_module": "accounts.views",
+  "name": "admin-registration-approve",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/admin/students/registrations/<uuid:user_id>/reject/",
+  "methods": [
+   "POST"
+  ],
+  "view": "AdminRegistrationRejectView",
+  "view_module": "accounts.views",
+  "name": "admin-registration-reject",
+  "permissions": [
+   "IsAdminRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/payment/stripe/webhook/",
+  "methods": [
+   "POST"
+  ],
+  "view": "StripeWebhookView",
+  "view_module": "payments.views",
+  "name": "payment-stripe-webhook",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/<str:student_name>/dashboard/",
+  "methods": [
+   "GET"
+  ],
+  "view": "StudentNamedDashboardView",
+  "view_module": "portal.views",
+  "name": "student-named-dashboard",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/access/",
+  "methods": [
+   "GET",
+   "POST"
+  ],
+  "view": "AccessListCreateView",
+  "view_module": "access.views",
+  "name": "access-list",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/access/<uuid:access_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "AccessDetailView",
+  "view_module": "access.views",
+  "name": "access-detail",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/course/",
+  "methods": [
+   "GET"
+  ],
+  "view": "CourseListView",
+  "view_module": "courses.views",
+  "name": "course-list",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/course/<uuid:course_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "CourseDetailView",
+  "view_module": "courses.views",
+  "name": "course-detail",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/courses/",
+  "methods": [
+   "GET"
+  ],
+  "view": "MyCourseListView",
+  "view_module": "courses.views",
+  "name": "my-courses",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/dashboard/",
+  "methods": [
+   "GET"
+  ],
+  "view": "StudentDashboardView",
+  "view_module": "portal.views",
+  "name": "student-dashboard",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/learning-history/",
+  "methods": [
+   "GET"
+  ],
+  "view": "LearningHistoryView",
+  "view_module": "viewing.views",
+  "name": "my-learning-history",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/login/",
+  "methods": [
+   "POST"
+  ],
+  "view": "LoginView",
+  "view_module": "accounts.views",
+  "name": "student-login",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/notifications/",
+  "methods": [
+   "GET"
+  ],
+  "view": "NotificationListView",
+  "view_module": "notifications.views",
+  "name": "notification-list",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/student/notifications/<uuid:notification_id>/",
+  "methods": [
+   "DELETE",
+   "GET"
+  ],
+  "view": "NotificationDetailView",
+  "view_module": "notifications.views",
+  "name": "notification-detail",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/student/notifications/<uuid:notification_id>/read/",
+  "methods": [
+   "POST"
+  ],
+  "view": "NotificationReadView",
+  "view_module": "notifications.views",
+  "name": "notification-read",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/student/notifications/read-all/",
+  "methods": [
+   "POST"
+  ],
+  "view": "NotificationReadAllView",
+  "view_module": "notifications.views",
+  "name": "notification-read-all",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/student/payment-requests/",
+  "methods": [
+   "GET"
+  ],
+  "view": "MyPaymentRequestsView",
+  "view_module": "payments.views",
+  "name": "my-payment-requests",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/payment/create-checkout/",
+  "methods": [
+   "POST"
+  ],
+  "view": "CreateCheckoutView",
+  "view_module": "payments.views",
+  "name": "payment-create-checkout",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/payments/",
+  "methods": [
+   "GET"
+  ],
+  "view": "MyPaymentsView",
+  "view_module": "payments.views",
+  "name": "my-payments",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/payments/<uuid:payment_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "PaymentDetailView",
+  "view_module": "payments.views",
+  "name": "payment-detail",
+  "permissions": [
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/profile/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "MeView",
+  "view_module": "accounts.views",
+  "name": "student-profile",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": [
+   "permission_classes"
+  ]
+ },
+ {
+  "url": "/api/student/register/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegisterView",
+  "view_module": "accounts.views",
+  "name": "student-register",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/register/send-otp/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegistrationSendOtpView",
+  "view_module": "accounts.views",
+  "name": "student-register-send-otp",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/register/verify-otp/",
+  "methods": [
+   "POST"
+  ],
+  "view": "RegistrationVerifyOtpView",
+  "view_module": "accounts.views",
+  "name": "student-register-verify-otp",
+  "permissions": [
+   "AllowAny"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/settings/",
+  "methods": [
+   "GET",
+   "PATCH"
+  ],
+  "view": "StudentSettingsView",
+  "view_module": "portal.views",
+  "name": "student-settings",
+  "permissions": [
+   "IsStudentRole"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/viewing/courses/<uuid:course_id>/resources/",
+  "methods": [
+   "GET"
+  ],
+  "view": "ViewerCourseResourcesView",
+  "view_module": "viewing.views",
+  "name": "viewer-course-resources",
+  "permissions": [
+   "HasCourseAccess",
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/viewing/resources/<uuid:resource_id>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "ViewerResourceView",
+  "view_module": "viewing.views",
+  "name": "viewer-resource",
+  "permissions": [
+   "HasCourseAccess",
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/viewing/resources/<uuid:resource_id>/activity/",
+  "methods": [
+   "POST"
+  ],
+  "view": "ViewerActivityView",
+  "view_module": "viewing.views",
+  "name": "viewer-activity",
+  "permissions": [
+   "HasCourseAccess",
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ },
+ {
+  "url": "/api/student/viewing/resources/<uuid:resource_id>/pages/<int:page_number>/",
+  "methods": [
+   "GET"
+  ],
+  "view": "ViewerPageView",
+  "view_module": "viewing.views",
+  "name": "viewer-page",
+  "permissions": [
+   "HasCourseAccess",
+   "IsApprovedStudent"
+  ],
+  "kwargs": []
+ }
+]
