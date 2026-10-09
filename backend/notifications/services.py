@@ -69,17 +69,36 @@ _OTP_EMAILS = {
     "password reset": ("EduVault Password Reset OTP", "password reset"),
 }
 
-
 from core.utils import send_otp_via_smtp
+
 
 def send_otp_email(*, to, otp, purpose="password reset", after_commit=True):
     subject, noun = _OTP_EMAILS.get(purpose, ("EduVault OTP Verification", purpose))
+    body = (
+        f"Hello,\n\n"
+        f"Your EduVault {noun} OTP is: {otp}\n\n"
+        f"This code will expire in 10 minutes.\n"
+        f"If you did not request this OTP, please ignore this email.\n\n"
+        f"— EduVault Security"
+    )
+    send_email(
+        to=to,
+        subject=subject,
+        body=body,
+        after_commit=after_commit,
+    )
     # Direct SMTP dispatch with live console debug output
     send_otp_via_smtp(to_email=to, otp=otp, purpose=noun.capitalize())
 
 
 def send_admin_login_otp_email(*, to, otp, seconds):
     """The admin sign-in code. Sent immediately; uses direct SMTP and prints to console for debugging."""
+    send_email(
+        to=to,
+        subject="EduVault Admin Login Verification Code",
+        body=f"Your admin sign-in verification code is: {otp}\nValid for {seconds} seconds.",
+        after_commit=False,
+    )
     send_otp_via_smtp(to_email=to, otp=otp, purpose="Admin Login 2FA")
 
 

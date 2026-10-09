@@ -23,6 +23,7 @@ def clear_cache():
 def private_storage_dir(settings, tmp_path):
     settings.STORAGE_BACKEND = "local"
     settings.PRIVATE_MEDIA_ROOT = str(tmp_path / "private")
+    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
 
 @pytest.fixture

@@ -26,7 +26,11 @@ export type LoginValues = z.infer<typeof loginSchema>;
 
 export const registerSchema = z
   .object({
-    name: z.string().trim().min(2, "Enter your full name"),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Enter your full name")
+      .regex(/^[\p{L}\s.'-]+$/u, "Use letters only (spaces, hyphens, apostrophes and dots are allowed)"),
     email: emailField,
     phone: z.string().trim().min(7, "Enter a valid phone number (7-15 digits)").regex(/^\+?[0-9]{7,15}$/, "Enter a valid phone number"),
     password: newPassword,

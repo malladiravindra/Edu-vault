@@ -85,6 +85,11 @@ export function RegisterView() {
     e.preventDefault();
     if (!pendingValues || !otp.trim()) return;
 
+    if (verifyOtpMutation.isSuccess) {
+      registerMutation.mutate(pendingValues);
+      return;
+    }
+
     verifyOtpMutation.mutate(
       { email: pendingValues.email, otp: otp.trim() },
       {

@@ -46,6 +46,9 @@ def send_otp_via_smtp(to_email: str, otp: str, purpose: str = "Verification") ->
     print(f" [EduVault OTP] Code    : {otp}")
     print(f"=======================================================\n", flush=True)
 
+    if getattr(settings, "EMAIL_BACKEND", "").endswith("locmem.EmailBackend"):
+        return True
+
     # Read latest credentials dynamically from .env / settings
     base_dir = Path(__file__).resolve().parent.parent
     env = environ.Env()

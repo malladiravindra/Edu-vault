@@ -218,6 +218,22 @@ export function uploadWithProgress<T>(
 }
 
 export function getErrorMessage(error: unknown): string {
-  if (error instanceof ApiError || error instanceof Error) return error.message;
+  if (error instanceof ApiError) {
+    if (error.fieldErrors && typeof error.fieldErrors === "object") {
+      const messages: string[] = [];
+      for (const val of Object.values(error.fieldErrors)) {
+        if (Array.isArray(val)) {
+          messages.push(...val.map(String));
+        } else if (typeof val === "string") {
+          messages.push(val);
+        }
+      }
+      if (messages.length > 0) {
+        return messages.join(" ");
+      }
+    }
+    return error.message;
+  }
+  if (error instanceof Error) return error.message;
   return "Something went wrong. Please try again.";
 }

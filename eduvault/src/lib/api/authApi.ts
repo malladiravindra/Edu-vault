@@ -28,7 +28,7 @@ export interface AuthApi {
   studentLogin(input: LoginRequest): Promise<LoginResponse>;
   verifyTwoFactor(input: TwoFactorRequest): Promise<{ user: CurrentUser }>;
   resendTwoFactor(challengeId: string): Promise<void>;
-  sendRegistrationOtp(email: string): Promise<void>;
+  sendRegistrationOtp(email: string): Promise<{ message?: string; dev_otp?: string } | void>;
   verifyRegistrationOtp(email: string, otp: string): Promise<void>;
   register(input: RegisterRequest): Promise<{ email: string }>;
   forgotPassword(email: string): Promise<void>;
@@ -104,7 +104,7 @@ export const studentAuthApi = {
 
   async sendRegistrationOtp(email: string): Promise<{ message?: string; dev_otp?: string } | void> {
     const res = await http.post<{ message?: string; dev_otp?: string }>("/student/register/send-otp/", { email });
-    return res.data;
+    return (res as any)?.data ?? res;
   },
 
   async verifyRegistrationOtp(email: string, otp: string): Promise<void> {
